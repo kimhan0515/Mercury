@@ -3,7 +3,7 @@
 # 0. imports
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"]="2,3"
+os.environ["CUDA_VISIBLE_DEVICES"]="0,1,2,3"
 
 import torch
 import datasets
@@ -22,7 +22,7 @@ from trl.import_utils import is_xpu_available
 class ScriptArguments:
     model_name: Optional[str] = field(default="bigcode/starcoder2-7b", metadata={"help": "the model name"})
     load_in_4bit: Optional[bool] = field(default=True, metadata={"help": "Model 4 bit quant"})
-    
+
     log_with: Optional[str] = field(default="wandb", metadata={"help": "use 'wandb' to log with wandb"})
 
     dataset_name: Optional[str] = field(default="Elfsong/Mercury", metadata={"help": "the dataset name"})
@@ -33,12 +33,12 @@ class ScriptArguments:
     max_steps: Optional[int] = field(default=800, metadata={"help": "the maximum number of sgd steps"})
     logging_steps: Optional[int] = field(default=4, metadata={"help": "the logging frequency"})
     save_steps: Optional[int] = field(default=1000, metadata={"help": "the saving frequency"})
-    
+
     per_device_train_batch_size: Optional[int] = field(default=2, metadata={"help": "the per device train batch size"})
     per_device_eval_batch_size: Optional[int] = field(default=1, metadata={"help": "the per device eval batch size"})
     gradient_accumulation_steps: Optional[int] = field(default=4, metadata={"help": "the gradient accumulation steps"})
     gradient_checkpointing: Optional[bool] = field(default=True, metadata={"help": "whether to use gradient checkpointing"})
-    
+
     group_by_length: Optional[bool] = field(default=False, metadata={"help": "whether to group by length"})
     packing: Optional[bool] = field(default=False, metadata={"help": "whether to use packing for SFTTrainer"})
 
@@ -64,7 +64,7 @@ if script_args.group_by_length and script_args.packing:
 print("Model Loading...")
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=script_args.load_in_4bit,
-    load_in_8bit=not script_args.load_in_4bit, 
+    load_in_8bit=not script_args.load_in_4bit,
     bnb_4bit_quant_type="nf4",
     bnb_4bit_use_double_quant=True,
     bnb_4bit_compute_dtype=torch.bfloat16,
@@ -144,7 +144,7 @@ def prompt_generate(question_content, starter_code="", answer=""):
     # prompt += get_example_prompt(examples_json)
     # code generation
     prompt += get_example_prompt({"question": question_content,"sample_code": starter_code,"answer": answer})
-    
+
     return prompt
 
 def formatting_prompts_func(examples):
