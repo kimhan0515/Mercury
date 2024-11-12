@@ -16,7 +16,6 @@ from peft import AutoPeftModelForCausalLM, LoraConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, HfArgumentParser, TrainingArguments
 
 from trl import SFTTrainer
-from trl.import_utils import is_xpu_available
 
 @dataclass
 class ScriptArguments:
@@ -52,7 +51,7 @@ class ScriptArguments:
     weight_decay: Optional[float] = field(default=0.05, metadata={"help": "the weight decay"})
     optimizer_type: Optional[str] = field(default="paged_adamw_32bit", metadata={"help": "the optimizer type"})
 
-    output_dir: Optional[str] = field(default="/home/mingzhe/Projects/Mercury/checkpoints", metadata={"help": "the output directory"})
+    output_dir: Optional[str] = field(default="/home/n6/hanbyeol/Mercury/checkpoints", metadata={"help": "the output directory"})
     log_freq: Optional[int] = field(default=1, metadata={"help": "the logging frequency"})
 
 parser = HfArgumentParser(ScriptArguments)
@@ -181,10 +180,7 @@ model.save_pretrained(output_dir)
 
 # Free memory for merging weights
 del base_model
-if is_xpu_available():
-    torch.xpu.empty_cache()
-else:
-    torch.cuda.empty_cache()
+torch.cuda.empty_cache()
 
 # [Warning] DeepSpeed Zero-3 is not compatible with `low_cpu_mem_usage=True` or with passing a `device_map`.
 # Do this operation later manually

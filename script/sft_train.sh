@@ -15,8 +15,8 @@
 # deepseek-ai/deepseek-coder-1.3b-base
 python3.11 ./src/sft_train.py \
     --model_name    deepseek-ai/deepseek-coder-1.3b-base    \
-    --seq_length    2048   \
-    --max_steps     200     \
+    --seq_length    4096   \
+    --max_steps     2000     \
     --per_device_train_batch_size 2 \
     --gradient_accumulation_steps 2 \
     --learning_rate 1e-4

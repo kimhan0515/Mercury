@@ -4,7 +4,7 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = '0,1,2,3'
 os.environ["TOKENIZERS_PARALLELISM"] = 'true'
-os.environ['HF_HOME'] = '/home/s4/hanbyeol/.cache/huggingface/hub'
+os.environ['HF_HOME'] = '/home/n6/hanbyeol/.cache/huggingface/hub'
 
 
 import json
@@ -16,7 +16,6 @@ import itertools
 import numpy as np
 
 from tqdm import tqdm
-from openai import OpenAI
 from sandbox import Sandbox
 from datasets import load_dataset
 from collections import defaultdict
@@ -91,7 +90,8 @@ class Evaluator(object):
             prompt = f"{content}\n{code_prompt}"
             return prompt
         else:
-            raise NameError(f"Can't find prompt template for [{self.model_name_or_path}]")
+            prompt = f"Complete python3 code to solve the following coding problem:\n{content}\n{code_prompt}"
+            return prompt
 
     def generate_completion(self, prompt: str):
         inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096)
@@ -469,7 +469,9 @@ class DistributeWiseEvaluator(Evaluator):
 
                 # Calculate Beyond
                 if result['result'] == "passed":
-                    runtime = result['runtime']
+                    result2 = self.sandbox.run_sample(sample)
+                    result3 = self.sandbox.run_sample(sample)
+                    runtime = (result['runtime'] + result2['runtime'] + result3['runtime']) / 3
                 else:
                     runtime = float('inf')
 

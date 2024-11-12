@@ -1,13 +1,11 @@
 # coding: utf-8
 
 import os
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+#os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
-import random
-
 import torch
-from trl import DPOTrainer, DPOConfig
+from trl import CPOTrainer, CPOConfig
 from peft import LoraConfig
 from typing import Dict, Optional
 from accelerate import Accelerator
@@ -16,16 +14,12 @@ from dataclasses import dataclass, field
 from datasets import Dataset, load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer, HfArgumentParser, TrainingArguments, BitsAndBytesConfig
 
-
 # Define and parse arguments.
 @dataclass
 class ScriptArguments:
     """
-    The arguments for the DPO training script.
+    The arguments for the CPO training script.
     """
-
-    # data parameters
-    beta: Optional[float] = field(default=0.1, metadata={"help": "the beta parameter for DPO loss"})
 
     # training parameters
     model_name_or_path: Optional[str] = field(default="deepseek-ai/deepseek-coder-33b-instruct", metadata={"help": "the location of the SFT model name or path"})
@@ -121,26 +115,7 @@ def get_code_paired(split="train", sanity_check: bool = False):
             solutions = question['solutions']
             code_prompt = question['prompt']
 
-
-
-#            solutions = sorted(solutions, key=lambda x: int(x["runtime"][:-2]))
-#            a_time = int(solutions[0]["runtime"][:-2])
-#            b_time = int(solutions[-1]["runtime"][:-2])
-#
-#            if b_time - a_time > 20:
-#                chosen_code, rejected_code = solutions[0]["solution"], solutions[-1]["solution"]
-#                if (starter in chosen_code) and (starter in rejected_code):
-#                    data += [{
-#                        "prompt": prompt_generate(content, code_prompt),
-#                        "chosen": f"{chosen_code}",
-#                        "rejected": f"{rejected_code}",
-#                    }]
-
-            cnt = 0
-            pairs = list(permutations(solutions, 2))
-            random.shuffle(pairs)
-
-            for pair in pairs:
+            for pair in list(permutations(solutions, 2) ):
                 a, b = pair
                 a_time = int(a["runtime"][:-2])
                 b_time = int(b["runtime"][:-2])
@@ -154,16 +129,13 @@ def get_code_paired(split="train", sanity_check: bool = False):
                             "chosen": f"{chosen_code}",
                             "rejected": f"{rejected_code}",
                         }]
-                        cnt += 1
 
-                if cnt == 5:
-                    break
+    return Dataset.from_list(data[:10000])
 
-    random.shuffle(data)
-    return Dataset.from_list(data)
 
 
 if __name__ == "__main__":
+    print(Accelerator().num_processes)
     parser = HfArgumentParser(ScriptArguments)
     script_args = parser.parse_args_into_dataclasses()[0]
 
@@ -178,8 +150,9 @@ if __name__ == "__main__":
     model = AutoModelForCausalLM.from_pretrained(
         script_args.model_name_or_path,
         quantization_config=bnb_config,
-        # device_map={"": Accelerator().local_process_index},
-        device_map="auto",
+        #device_map={'':torch.cuda.current_device()},
+        #device_map={"": Accelerator().local_process_index},
+        #device_map="auto",
         trust_remote_code=True,
         token=True,
         low_cpu_mem_usage=True,
@@ -207,10 +180,12 @@ if __name__ == "__main__":
     # print(f"Eval Dataset After: {len(eval_dataset)}")
 
     # 4. initialize training arguments:
-    training_args = DPOConfig(
+    training_args = CPOConfig(
         per_device_train_batch_size=script_args.per_device_train_batch_size,
         per_device_eval_batch_size=script_args.per_device_eval_batch_size,
         max_steps=script_args.max_steps,
+        max_length=script_args.max_length,
+        max_prompt_length=script_args.max_prompt_length,
         logging_steps=script_args.logging_steps,
         save_steps=script_args.save_steps,
         gradient_accumulation_steps=script_args.gradient_accumulation_steps,
@@ -225,7 +200,7 @@ if __name__ == "__main__":
         optim=script_args.optimizer_type,
         remove_unused_columns=False,
         bf16=True,
-        run_name=f"dpo_train_{script_args.model_name_or_path}",
+        run_name=f"cpo_train_{script_args.model_name_or_path}",
         #model_init_kwargs=None,
     )
 
@@ -246,26 +221,23 @@ if __name__ == "__main__":
         task_type="CAUSAL_LM",
     )
 
-    # 5. initialize the DPO trainer
-    dpo_trainer = DPOTrainer(
+    # 5. initialize the CPO trainer
+    cpo_trainer = CPOTrainer(
         model,
         # model_ref,
         args=training_args,
-        beta=script_args.beta,
+        processing_class=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=train_dataset, # for faster loading, cause we don't evaluate here.
-        tokenizer=tokenizer,
         peft_config=peft_config,
-        max_prompt_length=script_args.max_prompt_length,
-        max_length=script_args.max_length,
     )
 
     # 6. train
-    dpo_trainer.train()
+    cpo_trainer.train()
 
     # 7. save
-    output_dir = os.path.join(script_args.output_dir, f"{script_args.model_name_or_path}-dpo-final_checkpoint")
-    dpo_trainer.save_model(output_dir)
+    output_dir = os.path.join(script_args.output_dir, f"{script_args.model_name_or_path}-cpo-final_checkpoint")
+    cpo_trainer.save_model(output_dir)
 
-    model = dpo_trainer.model.merge_and_unload()
+    model = cpo_trainer.model.merge_and_unload()
     model.save_pretrained(output_dir)
