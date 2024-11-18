@@ -13,16 +13,18 @@
 #    --gradient_accumulation_steps   4
 
 # deepseek-ai/deepseek-coder-1.3b-base
+# learning_rate = 2e-4
+# warmup_steps = 50 in original script
 python3.11 ./src/dpo_train.py    \
     --model_name    deepseek-ai/deepseek-coder-1.3b-base   \
     --beta          0.1  \
-    --learning_rate 2e-4    \
+    --learning_rate 1e-4    \
     --max_prompt_length 1024    \
     --max_length    4096    \
-    --warmup_steps  100     \
+    --warmup_steps  50     \
     --max_steps     200     \
     --per_device_train_batch_size   1   \
-    --gradient_accumulation_steps   16   \
+    --gradient_accumulation_steps   4   \
 
 # bigcode/starcoder2-7b
 #accelerate  launch --main_process_port 40003  ./src/dpo_train.py    \

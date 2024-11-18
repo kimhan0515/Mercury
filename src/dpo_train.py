@@ -5,6 +5,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 import random
+import statistics
 
 import torch
 from trl import DPOTrainer, DPOConfig
@@ -123,29 +124,20 @@ def get_code_paired(split="train", sanity_check: bool = False):
 
 
 
-#            solutions = sorted(solutions, key=lambda x: int(x["runtime"][:-2]))
-#            a_time = int(solutions[0]["runtime"][:-2])
-#            b_time = int(solutions[-1]["runtime"][:-2])
-#
-#            if b_time - a_time > 20:
-#                chosen_code, rejected_code = solutions[0]["solution"], solutions[-1]["solution"]
-#                if (starter in chosen_code) and (starter in rejected_code):
-#                    data += [{
-#                        "prompt": prompt_generate(content, code_prompt),
-#                        "chosen": f"{chosen_code}",
-#                        "rejected": f"{rejected_code}",
-#                    }]
 
             cnt = 0
             pairs = list(permutations(solutions, 2))
             random.shuffle(pairs)
+
+            runtimes = [int(solution["runtime"][:-2]) for solution in solutions]
+            stdev = statistics.stdev(runtimes)
 
             for pair in pairs:
                 a, b = pair
                 a_time = int(a["runtime"][:-2])
                 b_time = int(b["runtime"][:-2])
 
-                if b_time - a_time > 20:
+                if b_time - a_time > 1.5 * stdev:
                     chosen_code, rejected_code = a["solution"], b["solution"]
 
                     if (starter in chosen_code) and (starter in rejected_code):

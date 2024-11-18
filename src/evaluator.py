@@ -471,7 +471,9 @@ class DistributeWiseEvaluator(Evaluator):
                 if result['result'] == "passed":
                     result2 = self.sandbox.run_sample(sample)
                     result3 = self.sandbox.run_sample(sample)
-                    runtime = (result['runtime'] + result2['runtime'] + result3['runtime']) / 3
+                    result4 = self.sandbox.run_sample(sample)
+                    result5 = self.sandbox.run_sample(sample)
+                    runtime = (result['runtime'] + result2['runtime'] + result3['runtime'] + result4['runtime'] + result5['runtime']) / 5
                 else:
                     runtime = float('inf')
 
