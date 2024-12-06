@@ -4,7 +4,7 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 os.environ["TOKENIZERS_PARALLELISM"] = 'false'
-os.environ['HF_HOME'] = '/home/mingzhe/hf_cache'
+os.environ['HF_HOME'] = '/data/s1/jaehwan/hf_cache'
 
 
 import json
@@ -16,8 +16,8 @@ import itertools
 import numpy as np
 
 from tqdm import tqdm
-from openai import OpenAI
-from src.sandbox import Sandbox
+# from openai import OpenAI
+from sandbox import Sandbox
 from datasets import load_dataset
 from collections import defaultdict
 from typing import Iterable, Dict, List, Union
@@ -30,10 +30,10 @@ class Evaluator(object):
         assert model_name_or_path is not None
         self.model_name_or_path = model_name_or_path
         self.openai_key = os.environ.get('OPENAI_API_KEY')
-        if self.openai_key:
-            self.openai_client = OpenAI(api_key=self.openai_key)
-        else:
-            raise Exception('Unknown OpenAI Key')
+        # if self.openai_key:
+        #     self.openai_client = OpenAI(api_key=self.openai_key)
+        # else:
+        #     raise Exception('Unknown OpenAI Key')
     
     @staticmethod
     def write_jsonl(filename: str, data: Iterable[Dict], append: bool = False):
@@ -78,7 +78,7 @@ class Evaluator(object):
     def prompt_generate(self, instance):
         content = instance['pretty_content'][0]
         code_prompt = instance['prompt']
-        if self.model_name_or_path in ['deepseek-ai/deepseek-coder-33b-instruct', 'deepseek-ai/deepseek-coder-6.7b-instruct']:
+        if self.model_name_or_path.startswith('deepseek-ai/deepseek-coder'):
             prompt = f"Complete python3 code to solve the following coding problem:\n{content}\n{code_prompt}"
             return prompt
         elif self.model_name_or_path in ['codellama/CodeLlama-34b-Instruct-hf', 'codellama/CodeLlama-13b-Instruct-hf', 'codellama/CodeLlama-7b-Instruct-hf']:
@@ -406,19 +406,23 @@ class DistributeWiseEvaluator(Evaluator):
                     }]
         
         # Dump samples
-        with open(f'./data/{self.model_name_or_path}_samples.json', 'w') as sample_f:
+        with open(f'./data/jaehwan/{self.model_name_or_path}_samples.json', 'w') as sample_f:
             sample_f.write(json.dumps(samples))
             
         return samples
     
     def evaluate(self, num_samples_per_task=1):
         # Load samples from dump
-        with open(f'./data/{self.model_name_or_path}_samples.json', 'r') as sample_f:
+        with open(f'./data/jaehwan/{self.model_name_or_path}_samples.json', 'r') as sample_f:
             samples = json.load(sample_f)
+
+        # Calculate the sensitivity
+        beyond_sensitivities = []
+        beyond_x_sensitivities = []
         
         # Run in sandbox
         eval_results = defaultdict(list)
-        for instance in tqdm(self.dataset['eval'].to_list()):
+        for instance in tqdm(self.dataset['eval'].to_list()[:]):
             slug_name = instance['slug_name']
             solutions = samples[slug_name]
             selected_solutions = random.sample(solutions, num_samples_per_task) if num_samples_per_task <= len(solutions) else solutions
@@ -464,6 +468,36 @@ class DistributeWiseEvaluator(Evaluator):
                 beyond = min(beyond, 1)
                 beyond = max(beyond, 0)
                 beyond_precent = beyond / (max_runtime - min_runtime)
+                beyond_sensitivity = 1 / (max_runtime - min_runtime) if max_runtime != min_runtime else 0.0
+                beyond_sensitivities.append(beyond_sensitivity)
+
+                # JH: Calculate BeyondX (1-CDF)
+                runtimes_sorted = sorted(runtimes)
+                runtime_clipped = np.clip(runtime, runtimes_sorted[0] + 1e-6, runtimes_sorted[-1] - 1e-6)
+                cdf = 0.0  # Default CDF value
+                # Linear interpolation for Non-uniform distributions
+                for i in range(len(runtimes_sorted) - 1):
+                    if runtimes_sorted[i] <= runtime_clipped <= runtimes_sorted[i + 1]:
+                        if runtimes_sorted[i + 1] - runtimes_sorted[i] == 0:
+                            cdf = (i + 1) / len(runtimes_sorted)
+                            beyond_x_sensitivity = 0.0
+                            beyond_x_sensitivities.append(beyond_x_sensitivity)   
+                            break
+                        fraction = (runtime_clipped - runtimes_sorted[i]) / (runtimes_sorted[i + 1] - runtimes_sorted[i])
+                        beyond_x_sensitivity = 1 / ((runtimes_sorted[i + 1] - runtimes_sorted[i]) * len(runtimes_sorted))
+                        beyond_x_sensitivities.append(beyond_x_sensitivity)
+                        cdf = (i + fraction + 1) / len(runtimes_sorted)  # +1 for 1-based indexing
+                        break
+                else:
+                    if runtime_clipped > runtimes_sorted[-1]:  # Handle when runtime_clipped > max
+                        cdf = 1.0
+                    elif runtime_clipped <= runtimes_sorted[0]:  # Handle when runtime_clipped <= min
+                        cdf = 0.0
+                beyond_x_percent = 1 - cdf  # Higher is better
+
+                # JH: The runtime distribution of historical solutions
+                # print(f"Runtime Distribution: {runtimes_sorted}")
+                # print(f"LLM-generated Solution Runtime: {runtime} | Beyond%: {beyond_precent} | BeyondX%: {beyond_x_percent}")
                 
                 eval_results[slug_name] += [{
                     "slug_name": slug_name,
@@ -471,20 +505,32 @@ class DistributeWiseEvaluator(Evaluator):
                     "solution": solution['completion'],
                     "runtimes": runtimes,
                     "beyond_p": beyond_precent,
+                    "beyond_x_p": beyond_x_percent, # JH: BeyondX
                 }]
         
         # Score
-        total, passed, beyond = 0, 0, 0
+        total, passed, beyond, beyond_x = 0, 0, 0, 0
         for slug_name in eval_results:
             cases = eval_results[slug_name]
             total += 1
             beyond += cases[0]['beyond_p']
+            beyond_x += cases[0]['beyond_x_p']
             if cases[0]['status']['result'] == "passed":
                 passed += 1
         passed_score = passed / total
         beyond_score = beyond / total
-        print(f"Pass@1: {passed_score} Beyond@1: {beyond_score}")
+        beyond_x_score = beyond_x / total
+        print(f"Pass@1: {passed_score} Beyond@1: {beyond_score} BeyondX@1: {beyond_x_score}")
+        print(f"Number of each sensitivity scores: {len(beyond_sensitivities), len(beyond_x_sensitivities)}")
+        Average_Beyond_sensitivity = sum(beyond_sensitivities) / len(beyond_sensitivities)
+        Average_BeyondX_sensitivity = sum(beyond_x_sensitivities) / len(beyond_x_sensitivities)
+        print(f"Average Beyond Sensitivity: {Average_Beyond_sensitivity} Average BeyondX Sensitivity: {Average_BeyondX_sensitivity}")
 
+        # Save and accumulate in a csv file of Pass@1, Beyond@1, and BeyondX@1
+        with open(f'./data/jaehwan/{self.model_name_or_path}_metric_score.csv', 'a') as eval_f:
+            eval_f.write(f"{passed_score},{beyond_score},{beyond_x_score}\n")
+        with open(f'./data/jaehwan/{self.model_name_or_path}_metric_sensitivity.csv', 'a') as eval_f:
+            eval_f.write(f"{Average_Beyond_sensitivity},{Average_BeyondX_sensitivity}\n")
 
         return samples
     

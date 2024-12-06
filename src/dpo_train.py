@@ -1,14 +1,15 @@
 # coding: utf-8
 
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-# os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ['HF_HOME'] = '/data/s1/jaehwan/hf_cache'
 
 import torch
 from trl import DPOTrainer
 from peft import LoraConfig
 from typing import Dict, Optional
-from accelerate import Accelerator
+# from accelerate import Accelerator
 from itertools import permutations
 from dataclasses import dataclass, field
 from datasets import Dataset, load_dataset
@@ -155,7 +156,6 @@ if __name__ == "__main__":
         # device_map={"": Accelerator().local_process_index},
         device_map="auto",
         trust_remote_code=True,
-        token=True,
         low_cpu_mem_usage=True,
     )
     model.config.use_cache = False
