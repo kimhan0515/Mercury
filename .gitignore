@@ -2,3 +2,5 @@ src/__pycache__/*
 checkpoints/*
 wandb/*
 ~/hf_cache/.locks/
+
+data/jaehwan/*

@@ -4,7 +4,9 @@
 * Mercury is the first code efficiency benchmark designed for code synthesis tasks.
 * It consists of 1,889 programming tasks covering diverse difficulty levels, along with test case generators that produce unlimited cases for comprehensive evaluation.
 
-> [September 20, 2024] We release a **way bigger** dataset [**Venus**](https://github.com/Elfsong/venus), which supports Python3 and C++. It also provides **Memory** measurement other than **Time**.
+> [October 8, 2024] Mercury has been accepted to [**NeurIPS 2024**](https://neurips.cc/virtual/2024/poster/97452) 🌟
+> 
+> [September 20, 2024] We release a **way bigger** dataset [**Venus**](https://github.com/Elfsong/venus), which supports more languages. It also provides **Memory** measurement other than **Time**.
 
 > [July 10, 2024] We are building [**Code Arena**](https://codearena.online/about/) now for more efficient Code LLMs evaluation!
 
@@ -54,10 +56,10 @@ evaluator.evaluate(num_samples_per_task=1)
 
 ## Citation
 ```
-@article{du2024mercury,
-  title={Mercury: An Efficiency Benchmark for LLM Code Synthesis},
-  author={Du, Mingzhe and Luu, Anh Tuan and Ji, Bin and Ng, See-Kiong},
-  journal={arXiv preprint arXiv:2402.07844},
+@inproceedings{du2024mercury,
+  title={Mercury: A code efficiency benchmark for code large language models},
+  author={Du, Mingzhe and Luu, Anh Tuan and Ji, Bin and Liu, Qian and Ng, See-Kiong},
+  booktitle={The Thirty-eight Conference on Neural Information Processing Systems Datasets and Benchmarks Track},
   year={2024}
 }
 ```
