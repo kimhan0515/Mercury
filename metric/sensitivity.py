@@ -10,6 +10,23 @@ R_sorted = [
 ]
 runtime = 0.0010554790496826172
 
+# test Clustering
+cluster_sorted = []
+current_cluster = [R_sorted[0]]
+
+cluster_threshold = (R_sorted[-1] - R_sorted[0]) / 100
+for i in range(len(R_sorted) - 1):
+    current_cluster.append(R_sorted[i])
+    if R_sorted[i+1] - R_sorted[i] > cluster_threshold:
+        if len(current_cluster) != 0:
+            cluster_sorted.append(sum(current_cluster)/len(current_cluster))
+            current_cluster = []
+    current_cluster.append(R_sorted[i+1])
+
+cluster_sorted.append(sum(current_cluster) / len(current_cluster))
+
+print(cluster_sorted)
+
 # Beyond Metric Sensitivity
 beyond_sensitivity = 1 / (max(R_sorted) - min(R_sorted))
 
@@ -23,5 +40,16 @@ for i in range(len(R_sorted) - 1):
             our_sensitivity = 1 / (interval * n)
         break
 
+# Our Metric + Cluster Sensitivity
+n = len(cluster_sorted)
+cluster_sensitivity = 0
+for i in range(len(cluster_sorted) - 1):
+    if cluster_sorted[i] <= runtime <= cluster_sorted[i + 1]:
+        interval = cluster_sorted[i + 1] - cluster_sorted[i]
+        if interval != 0:
+            cluster_sensitivity = 1 / (interval * n)
+        break
+
 print(f"Beyond Metric Sensitivity: {beyond_sensitivity:.4f}")
 print(f"Our Metric Sensitivity: {our_sensitivity:.4f}")
+print(f"Cluster Sensitivity: {our_sensitivity:.4f}")
