@@ -470,11 +470,11 @@ class DistributeWiseEvaluator(Evaluator):
                 # Calculate Beyond
                 if result['result'] == "passed":
                     runtime = result['runtime']
-                    # result2 = self.sandbox.run_sample(sample)
-                    # result3 = self.sandbox.run_sample(sample)
-                    # result4 = self.sandbox.run_sample(sample)
-                    # result5 = self.sandbox.run_sample(sample)
-                    # runtime = (result['runtime'] + result2['runtime'] + result3['runtime'] + result4['runtime'] + result5['runtime']) / 5
+                    result2 = self.sandbox.run_sample(sample)
+                    result3 = self.sandbox.run_sample(sample)
+                    result4 = self.sandbox.run_sample(sample)
+                    result5 = self.sandbox.run_sample(sample)
+                    runtime = (result['runtime'] + result2['runtime'] + result3['runtime'] + result4['runtime'] + result5['runtime']) / 5
                 else:
                     runtime = float('inf')
 
@@ -514,20 +514,19 @@ class DistributeWiseEvaluator(Evaluator):
                 # HB: Clustering + BeyondX
 
                 # get clustered list
-                cluster_sorted = sorted(runtimes)
-                cluster_threshold = (cluster_sorted[-1] - cluster_sorted[0]) / 100
+                cluster_sorted = []
+                cluster_threshold = (runtimes_sorted[-1] - runtimes_sorted[0]) / 100
 
-                current_cluster = [cluster_sorted[0]]
-                for i in range(len(cluster_sorted) - 1):
-                    current_cluster.append(cluster_sorted[i])
-                    if cluster_sorted[i+1] - cluster_sorted[i] > cluster_threshold:
+                current_cluster = [runtimes_sorted[0]]
+                for i in range(len(runtimes_sorted) - 1):
+                    current_cluster.append(runtimes_sorted[i])
+                    if runtimes_sorted[i+1] - runtimes_sorted[i] > cluster_threshold:
                         if len(current_cluster) != 0:
                             cluster_sorted.append(sum(current_cluster)/len(current_cluster))
                             current_cluster = []
-                    current_cluster.append(cluster_sorted[i+1])
+                    current_cluster.append(runtimes_sorted[i+1])
 
                 cluster_sorted.append(sum(current_cluster) / len(current_cluster))
-
 
                 # calculate BeyondX
                 runtime_clipped = np.clip(runtime, cluster_sorted[0] + 1e-6, cluster_sorted[-1] - 1e-6)
