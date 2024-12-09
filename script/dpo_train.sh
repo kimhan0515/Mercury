@@ -122,3 +122,4 @@ python3.11 ./src/dpo_train.py    \
 #    --max_steps     200     \
 #    --per_device_train_batch_size   1   \
 #    --gradient_accumulation_steps   4
+#    --gradient_accumulation_steps   4

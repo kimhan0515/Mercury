@@ -29,11 +29,6 @@ class Evaluator(object):
         assert model_name_or_path is not None
         self.model_name_or_path = model_name_or_path
         self.openai_key = os.environ.get('OPENAI_API_KEY')
-#        if self.openai_key:
-#            self.openai_client = OpenAI(api_key=self.openai_key)
-#        else:
-#            raise Exception('Unknown OpenAI Key')
-
     @staticmethod
     def write_jsonl(filename: str, data: Iterable[Dict], append: bool = False):
         """
@@ -425,9 +420,14 @@ class DistributeWiseEvaluator(Evaluator):
         with open(f'./data/{self.model_name_or_path}_samples.json', 'r') as sample_f:
             samples = json.load(sample_f)
 
+        # Calculate the sensitivity
+        beyond_sensitivities = []
+        beyond_x_sensitivities = []
+        clustering_sensitivities = []
+
         # Run in sandbox
         eval_results = defaultdict(list)
-        for instance in tqdm(self.dataset['eval'].to_list()):
+        for instance in tqdm(self.dataset['eval'].to_list()[:]):
             slug_name = instance['slug_name']
             solutions = samples[slug_name]
             selected_solutions = random.sample(solutions, num_samples_per_task) if num_samples_per_task <= len(solutions) else solutions
@@ -469,6 +469,7 @@ class DistributeWiseEvaluator(Evaluator):
 
                 # Calculate Beyond
                 if result['result'] == "passed":
+                    runtime = result['runtime']
                     result2 = self.sandbox.run_sample(sample)
                     result3 = self.sandbox.run_sample(sample)
                     result4 = self.sandbox.run_sample(sample)
@@ -482,26 +483,114 @@ class DistributeWiseEvaluator(Evaluator):
                 beyond = max(beyond, 0)
                 beyond_precent = beyond / (max_runtime - min_runtime)
 
+
+                beyond_sensitivity = 1 / (max_runtime - min_runtime) if max_runtime != min_runtime else 0.0
+                beyond_sensitivities.append(beyond_sensitivity)
+
+                # JH: Calculate BeyondX (1-CDF)
+                runtimes_sorted = sorted(runtimes)
+                runtime_clipped = np.clip(runtime, runtimes_sorted[0] + 1e-6, runtimes_sorted[-1] - 1e-6)
+                cdf = 0.0  # Default CDF value
+                # Linear interpolation for Non-uniform distributions
+                for i in range(len(runtimes_sorted) - 1):
+                    if runtimes_sorted[i] <= runtime_clipped <= runtimes_sorted[i + 1]:
+                        if runtimes_sorted[i + 1] - runtimes_sorted[i] == 0:
+                            cdf = (i + 1) / len(runtimes_sorted)
+                            beyond_x_sensitivity = 0.0
+                            beyond_x_sensitivities.append(beyond_x_sensitivity)
+                            break
+                        fraction = (runtime_clipped - runtimes_sorted[i]) / (runtimes_sorted[i + 1] - runtimes_sorted[i])
+                        beyond_x_sensitivity = 1 / ((runtimes_sorted[i + 1] - runtimes_sorted[i]) * len(runtimes_sorted))
+                        beyond_x_sensitivities.append(beyond_x_sensitivity)
+                        cdf = (i + fraction + 1) / len(runtimes_sorted)  # +1 for 1-based indexing
+                        break
+                else:
+                    if runtime_clipped > runtimes_sorted[-1]:  # Handle when runtime_clipped > max
+                        cdf = 1.0
+                    elif runtime_clipped <= runtimes_sorted[0]:  # Handle when runtime_clipped <= min
+                        cdf = 0.0
+                beyond_x_percent = 1 - cdf  # Higher is better
+
+                # HB: Clustering + BeyondX
+
+                # get clustered list
+                cluster_sorted = []
+                cluster_threshold = (runtimes_sorted[-1] - runtimes_sorted[0]) / 100
+
+                current_cluster = [runtimes_sorted[0]]
+                for i in range(len(runtimes_sorted) - 1):
+                    current_cluster.append(runtimes_sorted[i])
+                    if runtimes_sorted[i+1] - runtimes_sorted[i] > cluster_threshold:
+                        if len(current_cluster) != 0:
+                            cluster_sorted.append(sum(current_cluster)/len(current_cluster))
+                            current_cluster = []
+                    current_cluster.append(runtimes_sorted[i+1])
+
+                cluster_sorted.append(sum(current_cluster) / len(current_cluster))
+
+                # calculate BeyondX
+                runtime_clipped = np.clip(runtime, cluster_sorted[0] + 1e-6, cluster_sorted[-1] - 1e-6)
+                cdf = 0.0  # Default CDF value
+                # Linear interpolation for Non-uniform distributions
+                for i in range(len(cluster_sorted) - 1):
+                    if cluster_sorted[i] <= runtime_clipped <= cluster_sorted[i + 1]:
+                        if cluster_sorted[i + 1] - cluster_sorted[i] == 0:
+                            print("Error: clustering failed")
+                            break
+                        fraction = (runtime_clipped - cluster_sorted[i]) / (cluster_sorted[i + 1] - cluster_sorted[i])
+                        clustering_sensitivity = 1 / ((cluster_sorted[i + 1] - cluster_sorted[i]) * len(cluster_sorted))
+                        clustering_sensitivities.append(clustering_sensitivity)
+                        cdf = (i + fraction + 1) / len(cluster_sorted)  # +1 for 1-based indexing
+                        break
+                else:
+                    if runtime_clipped > cluster_sorted[-1]:  # Handle when runtime_clipped > max
+                        cdf = 1.0
+                    elif runtime_clipped <= cluster_sorted[0]:  # Handle when runtime_clipped <= min
+                        cdf = 0.0
+                clustering_percent = 1 - cdf  # Higher is better
+
+
+                # JH: The runtime distribution of historical solutions
+                # print(f"Runtime Distribution: {runtimes_sorted}")
+                # print(f"LLM-generated Solution Runtime: {runtime} | Beyond%: {beyond_precent} | BeyondX%: {beyond_x_percent}")
+
                 eval_results[slug_name] += [{
                     "slug_name": slug_name,
                     "status":  result,
                     "solution": solution['completion'],
                     "runtimes": runtimes,
                     "beyond_p": beyond_precent,
+                    "beyond_x_p": beyond_x_percent, # JH: BeyondX
+                    "clustering_p": clustering_percent, # HB: Clustering
                 }]
 
+
         # Score
-        total, passed, beyond = 0, 0, 0
+        total, passed, beyond, beyond_x, clustering = 0, 0, 0, 0, 0
         for slug_name in eval_results:
             cases = eval_results[slug_name]
             total += 1
             beyond += cases[0]['beyond_p']
+            beyond_x += cases[0]['beyond_x_p']
+            clustering += cases[0]['clustering_p']
             if cases[0]['status']['result'] == "passed":
                 passed += 1
         passed_score = passed / total
         beyond_score = beyond / total
-        print(f"Pass@1: {passed_score} Beyond@1: {beyond_score}")
+        beyond_x_score = beyond_x / total
+        clustering_score = clustering / total
+        print(f"Pass@1: {passed_score} Beyond@1: {beyond_score} BeyondX@1: {beyond_x_score} Cluster@1: {clustering_score}")
+        print(f"Number of each sensitivity scores: {len(beyond_sensitivities), len(beyond_x_sensitivities), len(clustering_sensitivities)}")
+        Average_Beyond_sensitivity = sum(beyond_sensitivities) / len(beyond_sensitivities)
+        Average_BeyondX_sensitivity = sum(beyond_x_sensitivities) / len(beyond_x_sensitivities)
+        Average_Clustering_sensitivity = sum(clustering_sensitivities) / len(clustering_sensitivities)
+        print(f"Average Beyond Sensitivity: {Average_Beyond_sensitivity} Average BeyondX Sensitivity: {Average_BeyondX_sensitivity} Average Clustering Seneitivity: {Average_Clustering_sensitivity}")
 
+        # Save and accumulate in a csv file of Pass@1, Beyond@1, and BeyondX@1
+        with open(f'./data/{self.model_name_or_path}_metric_score.csv', 'a') as eval_f:
+            eval_f.write(f"{passed_score},{beyond_score},{beyond_x_score},{clustering_score}\n")
+        with open(f'./data/{self.model_name_or_path}_metric_sensitivity.csv', 'a') as eval_f:
+            eval_f.write(f"{Average_Beyond_sensitivity},{Average_BeyondX_sensitivity},{Average_Clustering_sensitivity}\n")
 
         return samples
 
